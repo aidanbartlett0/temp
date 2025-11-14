@@ -154,7 +154,7 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
             depth_remaining,
             pruning=False,
             alpha=None,
-            beta=None, 
+            beta=None,
             use_zobrist_hashing=False,
             current_hash=None):
 
