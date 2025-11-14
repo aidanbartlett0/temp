@@ -14,7 +14,7 @@ TO PROVIDE A GOOD STRUCTURE FOR YOUR IMPLEMENTATION.
 from agent_base import KAgent
 from game_types import State, Game_Type
 from static_eval import static_eval_scoring
-import time
+import time, random
 
 AUTHORS = 'Aidan Bartlett' 
 UWNETIDS = ['aidanb04'] # The first UWNetID here should
@@ -106,20 +106,29 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
 
         minimax_result = self.minimax(current_state, pruning=use_alpha_beta, depth_remaining=max_ply)
         new_move = minimax_result[1]
-
+        score = minimax_result[0]
         if self.utterances_matter:
-            if current_state.whose_move == 'X':
-                if minimax_result[0] > 0:
-                    remark = 'O is going down'
-                else:
-                    remark = 'Oh man, oh man, I dont know what to do, yo!'
+            if current_state.whose_move == 'O':
+                score = -score  # flip perspective so positive = good for Jesse
+
+            # Decide mood based on adjusted score
+            if score == float('inf'):
+                mood = "energetic"       # immediate win for Jesse
+            elif score > 200:
+                mood = "enthusiastic"    # very good move
+            elif score > 0 and score < 100:
+                mood = "confused"        # okay move
+            elif score == 0:
+                mood = "sad"             # neutral / tie
+            elif score > -100:
+                mood = "self_deprecating"# bad move
             else:
-                if minimax_result[0] < 0:
-                    remark = 'X is going down'
-                else:
-                    remark = 'This is bad, man!'
+                mood = "depressed"       # very bad move / losing
+
+            # Pick a random utterance from that mood
+            remark = random.choice(JESSE_UTTERANCE_BANK[mood])
         else:
-            remark = 'OK'
+            remark='OK'
 
         next_state = State(old=current_state)
         next_state.board[new_move[0]][new_move[1]] = next_state.whose_move
@@ -180,7 +189,6 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
                         next_state = State(old=state)
                         next_state.board[row][col] = next_state.whose_move
                         next_state.change_turn()
-
 
                         next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta)
                         child_score, _, = next_branch_score
@@ -247,6 +255,41 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
         elapsed_time = end_time - start_time
         print(f'score: {score} in {elapsed_time:.4f} secs')
         return score
+
+
+JESSE_UTTERANCE_BANK = {
+    "sad": [
+        "Yo, this is messed up…",
+        "Man, I dunno if I can handle this…",
+        "Heh… life's rough, man…"
+    ],
+    "depressed": [
+        "Aw, come on… why me?",
+        "Man, I'm just… done, yo.",
+        "I can't even…"
+    ],
+    "self_deprecating": [
+        "Heh… I probably messed this up, right?",
+        "Yeah, I'm not that smart…",
+        "Whatever, I'll try…"
+    ],
+    "enthusiastic": [
+        "Yo! Check this out!",
+        "Yeah! We got this!",
+        "Hell yeah, let's do it!"
+    ],
+    "energetic": [
+        "Boom! That’s how we do it!",
+        "Let’s go, man!",
+        "Heck yeah, this is lit!"
+    ],
+    "confused": [
+        "Wait… what just happened?",
+        "Yo… I don’t get this…",
+        "Huh… okay…"
+    ]
+}
+
 
 # OPTIONAL THINGS TO KEEP TRACK OF:
 
