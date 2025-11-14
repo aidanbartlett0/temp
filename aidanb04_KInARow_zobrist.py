@@ -92,6 +92,18 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
 
         return "OK"
 
+    def compute_zobrist_hash(self, state):
+        h = 0
+        for row in range(self.game_type.n):
+            for col in range(self.game_type.m):
+                piece = state.board[row][col]
+                if piece in ('X', 'O'):
+                    h ^= self.zobrist_table[(row, col, piece)]
+        return h
+
+    def update_zobrist_hash(self, current_hash, move, piece):
+        return current_hash ^ self.zobrist_table[(move[0], move[1], piece)]
+
     # The core of your agent's ability should be implemented here:             
     def make_move(self, current_state, current_remark, time_limit=1000,
                   use_alpha_beta=True,
@@ -104,7 +116,12 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
         self.zobrist_table_num_entries_this_turn = 0
         self.zobrist_table_num_hits_this_turn = 0
 
-        minimax_result = self.minimax(current_state, pruning=use_alpha_beta, depth_remaining=max_ply)
+        if use_zobrist_hashing:
+            current_hash = self.compute_zobrist_hash(current_state)
+        else:
+            current_hash = None
+        minimax_result = self.minimax(current_state, pruning=use_alpha_beta, depth_remaining=max_ply,
+                                      use_zobrist_hashing=use_zobrist_hashing, current_hash=current_hash)
         new_move = minimax_result[1]
 
         if self.utterances_matter:
@@ -158,9 +175,34 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
             use_zobrist_hashing=False,
             current_hash=None):
 
+        if use_zobrist_hashing and current_hash is not None:
+            # Combine current board hash with whose turn it is
+            player_turn = hash(state.whose_move) & ((1 << 64) - 1)
+            current_player_full = current_hash ^ player_turn
+        else:
+            current_player_full = None
+
+        if use_zobrist_hashing and current_hash is not None:
+            player_turn_hash = hash(state.whose_move) & ((1 << 64) - 1)
+            current_player_full = current_hash ^ player_turn_hash
+        else:
+            current_player_full = None
+
+        if use_zobrist_hashing and current_player_full is not None:
+            if current_player_full in self.transposition_table:
+                self.zobrist_table_num_hits_this_turn += 1
+                return self.transposition_table[current_player_full]
+
         if depth_remaining == 0:
+            if use_zobrist_hashing and current_player_full is not None and current_player_full in self.transposition_table:
+                self.zobrist_table_num_hits_this_turn += 1
+                return self.transposition_table[current_player_full]
             score = self.static_eval(state, self.game_type)
             self.num_static_evals_this_turn += 1
+
+            if use_zobrist_hashing and current_player_full is not None:
+                self.transposition_table[current_player_full] = [score, None]
+                self.zobrist_table_num_entries_this_turn += 1
             return [score, None]
 
         if state.whose_move == 'X':
@@ -175,8 +217,16 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
                         next_state.board[row][col] = next_state.whose_move
                         next_state.change_turn()
 
+                        if use_zobrist_hashing and current_player_full is not None:
+                            board_hash_after_move = self.update_zobrist_hash(current_player_full, move, state.whose_move)
 
-                        next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta)
+                            next_player_turn = hash(next_state.whose_move) & ((1 << 64) - 1)
+                            next_hash = board_hash_after_move ^ next_player_turn
+                        else:
+                            next_hash = None
+
+                        next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta, 
+                                                        use_zobrist_hashing, current_hash=next_hash)
                         child_score, _, = next_branch_score
                         if child_score > best_x_score_move[0]:
                             best_x_score_move = [child_score, move]
@@ -192,7 +242,15 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
             if not possible_moves:
                 score = self.static_eval(state, self.game_type)
                 self.num_static_evals_this_turn += 1
+                if use_zobrist_hashing and current_player_full is not None:
+                    if current_player_full not in self.transposition_table:
+                        self.transposition_table[current_player_full] = [score, None]
+                        self.zobrist_table_num_entries_this_turn += 1
                 return [score, None]
+            if use_zobrist_hashing and current_player_full is not None:
+                if current_player_full not in self.transposition_table:
+                    self.transposition_table[current_player_full] = best_x_score_move
+                    self.zobrist_table_num_entries_this_turn += 1
             return best_x_score_move
 
         else:
@@ -207,7 +265,16 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
                         next_state.board[row][col] = next_state.whose_move
                         next_state.change_turn()
 
-                        next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta)
+                        if use_zobrist_hashing and current_player_full is not None:
+                            board_hash_after_move = self.update_zobrist_hash(current_player_full, move, state.whose_move)
+
+                            next_player_turn = hash(next_state.whose_move) & ((1 << 64) - 1)
+                            next_hash = board_hash_after_move ^ next_player_turn
+                        else:
+                            next_hash = None
+
+                        next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta, 
+                                                        use_zobrist_hashing, current_hash=next_hash)
                         child_score, _, = next_branch_score
                         if child_score < best_o_score_move[0]:
                             best_o_score_move = [child_score, move]
@@ -224,7 +291,15 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
             if not possible_moves:
                 score = self.static_eval(state, self.game_type)
                 self.num_static_evals_this_turn += 1
+                if use_zobrist_hashing and current_player_full is not None:
+                    if current_player_full not in self.transposition_table:
+                        self.transposition_table[current_player_full] = [score, None]
+                        self.zobrist_table_num_entries_this_turn += 1
                 return [score, None]
+            if use_zobrist_hashing and current_player_full is not None:
+                if current_player_full not in self.transposition_table:
+                    self.transposition_table[current_player_full] = best_o_score_move
+                    self.zobrist_table_num_entries_this_turn += 1
             return best_o_score_move
 
         # Only the score is required here but other stuff can be returned
