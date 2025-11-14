@@ -158,6 +158,12 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
             use_zobrist_hashing=False,
             current_hash=None):
 
+        terminal_score = self.static_eval(state, self.game_type)
+        if terminal_score == float('inf') or terminal_score == -float('inf'):
+            # No moves; no need to reduce depth
+            self.num_static_evals_this_turn += 1
+            return [terminal_score, None]
+
         if depth_remaining == 0:
             score = self.static_eval(state, self.game_type)
             self.num_static_evals_this_turn += 1
@@ -178,6 +184,8 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
 
                         next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta)
                         child_score, _, = next_branch_score
+                        if child_score == float('inf'):
+                            return [child_score, move]
                         if child_score > best_x_score_move[0]:
                             best_x_score_move = [child_score, move]
                         if pruning:
@@ -209,6 +217,8 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
 
                         next_branch_score = self.minimax(next_state, depth_remaining-1, pruning, alpha, beta)
                         child_score, _, = next_branch_score
+                        if child_score == -float('inf'):
+                            return [child_score, move]
                         if child_score < best_o_score_move[0]:
                             best_o_score_move = [child_score, move]
                         if pruning:
@@ -226,11 +236,6 @@ class OurAgent(KAgent):  # Keep the class name "OurAgent" so a game master
                 self.num_static_evals_this_turn += 1
                 return [score, None]
             return best_o_score_move
-
-        # Only the score is required here but other stuff can be returned
-        # in the list, after the score, in case you want to pass info
-        # back from recursive calls that might be used in your utterances,
-        # etc.
 
     def static_eval(self, state, game_type=None):
         if not game_type:
